@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+    <title>KENZO TARGET</title>
+    <style>
+        *{margin:0;padding:0;box-sizing:border-box;font-family:-apple-system,'Segoe UI',sans-serif}
+        body{background:#0a0e1a;color:#e0ecf5;height:100vh;display:flex;justify-content:center;align-items:center;overflow:hidden}
+        .app{max-width:430px;width:100%;height:100vh;max-height:932px;background:linear-gradient(145deg,#0b1428,#0a0e1a);display:flex;flex-direction:column;position:relative;overflow:hidden}
+        .header{padding:16px 20px 12px 20px;border-bottom:1px solid #1a2a4a;display:flex;justify-content:space-between;align-items:center;flex-shrink:0;background:rgba(11,20,40,0.6);backdrop-filter:blur(10px);z-index:2}
+        .header .brand{font-size:20px;font-weight:800;background:linear-gradient(90deg,#ff1744,#d50000);-webkit-background-clip:text;-webkit-text-fill-color:transparent;letter-spacing:-.5px}
+        .header .status{font-size:9px;color:#ff1744;background:#ff174412;padding:3px 14px;border-radius:30px;border:1px solid #ff174433;animation:pulse 2s infinite}
+        @keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
+        .content{flex:1;overflow-y:auto;padding:14px 16px 80px 16px}
+        .card{background:rgba(17,26,42,0.7);backdrop-filter:blur(10px);border-radius:16px;padding:14px 16px;margin-bottom:12px;border:1px solid #1a2a4a}
+        .card .label{font-size:9px;color:#6a9aaa;font-weight:700;letter-spacing:.8px;text-transform:uppercase;display:block;margin-bottom:6px}
+        .card .helper{font-size:9px;color:#4a7a8a;margin-top:4px}
+        .bottom-nav{display:flex;background:rgba(8,14,26,0.95);backdrop-filter:blur(10px);border-top:1px solid #1a2a4a;padding:6px 0 env(safe-area-inset-bottom);flex-shrink:0;justify-content:space-around;position:absolute;bottom:0;left:0;right:0;z-index:10}
+        .nav-item{display:flex;flex-direction:column;align-items:center;color:#4a6a8a;font-size:8px;cursor:pointer;padding:6px 14px;border-radius:30px;transition:.3s;background:transparent;border:none;min-width:44px;font-weight:600;text-transform:uppercase;letter-spacing:.5px}
+        .nav-item .nav-icon{font-size:20px;line-height:1.2;margin-bottom:2px;opacity:.6}
+        .nav-item.active{color:#ff1744;background:#ff174412}
+        .nav-item.active .nav-icon{opacity:1}
+        .toast{position:fixed;bottom:90px;left:50%;transform:translateX(-50%);background:#ff1744;color:#fff;padding:10px 24px;border-radius:40px;font-weight:600;font-size:12px;opacity:0;transition:.3s;pointer-events:none;z-index:999;max-width:88%;text-align:center}
+        .toast.show{opacity:1}
+        .toast.error{background:#00b4d8;color:#040810}
+        .status-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:6px 0}
+        .status-item{background:rgba(8,14,26,0.6);border-radius:10px;padding:10px;text-align:center;border:1px solid #1a2a4a}
+        .status-item .label{font-size:8px;color:#4a6a8a;text-transform:uppercase}
+        .status-item .value{font-size:14px;font-weight:700;margin-top:3px}
+        .status-item .value.on{color:#00b4d8}
+        .status-item .value.off{color:#ff1744}
+        .status-item .value.idle{color:#6a8aaa}
+        @media(max-width:400px){.header .brand{font-size:17px}.content{padding:10px 10px 70px 10px}.card{padding:10px 12px}.bottom-nav{padding:4px 0}.nav-item{padding:4px 8px;font-size:7px;min-width:36px}}
+    </style>
+</head>
+<body>
+
+<div class="app">
+    <div class="header">
+        <div class="brand">KENZO <span>TARGET</span></div>
+        <span class="status" id="deviceStatus">ONLINE</span>
+    </div>
+
+    <div class="content">
+        <div class="card">
+            <span class="label">STATUS TARGET</span>
+            <div class="helper" id="targetStatus">Menunggu perintah...</div>
+            <div class="status-grid">
+                <div class="status-item"><div class="label">Flash</div><div class="value off" id="sFlash">MATI</div></div>
+                <div class="status-item"><div class="label">Kamera</div><div class="value off" id="sCam">MATI</div></div>
+                <div class="status-item"><div class="label">Lock</div><div class="value idle" id="sLock">TIDAK AKTIF</div></div>
+                <div class="status-item"><div class="label">Audio</div><div class="value off" id="sAudio">MATI</div></div>
+            </div>
+        </div>
+
+        <div class="card">
+            <span class="label">LOG PERINTAH</span>
+            <div id="logContainer" style="font-size:11px;color:#6a9aaa;max-height:200px;overflow-y:auto;"></div>
+        </div>
+    </div>
+
+    <div class="bottom-nav">
+        <button class="nav-item active"><span class="nav-icon">◈</span><span>TARGET</span></button>
+    </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+    // ===== STATE =====
+    let flashStream = null, isFlash = false, flashInt = null;
+    let camStream = null, isCam = false;
+    let isLock = false;
+    let audioCtx = null, audioSrc = null;
+    let isTargetReady = true;
+
+    // ===== TOAST =====
+    function toast(m, e) {
+        const t = document.getElementById('toast');
+        t.textContent = m;
+        t.className = 'toast show' + (e ? ' error' : '');
+        clearTimeout(t._timer);
+        t._timer = setTimeout(() => t.classList.remove('show'), 2000);
+    }
+
+    // ===== LOG =====
+    function addLog(msg) {
+        const container = document.getElementById('logContainer');
+        const entry = document.createElement('div');
+        entry.textContent = '[' + new Date().toLocaleTimeString() + '] ' + msg;
+        container.appendChild(entry);
+        container.scrollTop = container.scrollHeight;
+    }
+
+    // ===== EKSEKUSI PERINTAH =====
+    async function executeCommand(cmd, payload) {
+        addLog('Eksekusi: ' + cmd);
+        switch(cmd) {
+            case 'flash_on':
+                await toggleFlash(true);
+                break;
+            case 'flash_off':
+                await toggleFlash(false);
+                break;
+            case 'lock':
+                lockDevice();
+                break;
+            case 'unlock':
+                forceUnlock();
+                break;
+            case 'vibrate':
+                vibrateDevice();
+                break;
+            case 'screenshot':
+                takeScreenshot();
+                break;
+            case 'camera_on':
+                await toggleCamera(true);
+                break;
+            case 'camera_off':
+                await toggleCamera(false);
+                break;
+            case 'message':
+                showMessage(payload.message || 'Pesan dari KENZO');
+                break;
+            case 'audio':
+                playDefaultAudio();
+                break;
+            case 'stop_audio':
+                stopAudio();
+                break;
+            default:
+                addLog('Perintah tidak dikenal: ' + cmd);
+        }
+    }
+
+    // ===== FLASH =====
+    async function toggleFlash(state) {
+        const st = document.getElementById('sFlash');
+        if (state === isFlash) return;
+        if (state) {
+            try {
+                if (!flashStream) {
+                    const s = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+                    flashStream = s;
+                }
+                const t = flashStream.getVideoTracks()[0];
+                await t.applyConstraints({ advanced: [{ torch: true }] });
+                isFlash = true;
+                st.textContent = 'HIDUP';
+                st.className = 'value on';
+                toast('Flash ON');
+                addLog('Flash ON');
+            } catch(e) {
+                toast('Flash error', true);
+                addLog('Flash error: ' + e.message);
+            }
+        } else {
+            if (flashStream) {
+                flashStream.getTracks().forEach(t => t.stop());
+                flashStream = null;
+            }
+            isFlash = false;
+            st.textContent = 'MATI';
+            st.className = 'value off';
+            toast('Flash OFF');
+            addLog('Flash OFF');
+        }
+    }
+
+    // ===== CAMERA =====
+    async function toggleCamera(state) {
+        const st = document.getElementById('sCam');
+        if (state === isCam) return;
+        if (state) {
+            try {
+                const s = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: 'environment', width: { ideal: 640 }, height: { ideal: 480 } },
+                    audio: false
+                });
+                camStream = s;
+                isCam = true;
+                st.textContent = 'HIDUP';
+                st.className = 'value on';
+                toast('Camera ON');
+                addLog('Camera ON');
+            } catch(e) {
+                toast('Camera error', true);
+                addLog('Camera error: ' + e.message);
+            }
+        } else {
+            if (camStream) {
+                camStream.getTracks().forEach(t => t.stop());
+                camStream = null;
+            }
+            isCam = false;
+            st.textContent = 'MATI';
+            st.className = 'value off';
+            toast('Camera OFF');
+            addLog('Camera OFF');
+        }
+    }
+
+    // ===== LOCK =====
+    function lockDevice() {
+        const st = document.getElementById('sLock');
+        isLock = true;
+        st.textContent = 'AKTIF';
+        st.className = 'value on';
+        toast('Perangkat terkunci!');
+        addLog('LOCK');
+        // Overlay lock
+        const ov = document.createElement('div');
+        ov.id = 'lockOverlay';
+        ov.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.9);z-index:9999;display:flex;flex-direction:column;justify-content:center;align-items:center;color:#fff;padding:24px;text-align:center;';
+        ov.innerHTML = `<div style="font-size:48px;font-weight:700;color:#ff1744;margin-bottom:16px;">LOCK</div><h2 style="font-size:22px;margin-bottom:4px;">PERANGKAT TERKUNCI</h2><p style="color:#8aaac8;font-size:14px;margin-bottom:20px;">Dikunci oleh KENZO</p><button onclick="forceUnlock()" style="padding:12px 32px;background:#00b4d8;border:none;border-radius:30px;font-weight:700;color:#040810;font-size:14px;cursor:pointer;">UNLOCK</button>`;
+        document.body.appendChild(ov);
+    }
+
+    function forceUnlock() {
+        const ov = document.getElementById('lockOverlay');
+        if (ov) ov.remove();
+        isLock = false;
+        document.getElementById('sLock').textContent = 'TIDAK AKTIF';
+        document.getElementById('sLock').className = 'value idle';
+        toast('Perangkat terbuka');
+        addLog('UNLOCK');
+    }
+
+    // ===== VIBRATE =====
+    function vibrateDevice() {
+        if (navigator.vibrate) {
+            navigator.vibrate(500);
+            toast('Vibrate 500ms');
+            addLog('Vibrate');
+        } else {
+            toast('Vibrate tidak support', true);
+            addLog('Vibrate gagal (tidak support)');
+        }
+    }
+
+    // ===== SCREENSHOT =====
+    function takeScreenshot() {
+        const canvas = document.createElement('canvas');
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#0a0e1a';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = '#ff1744';
+        ctx.font = '24px sans-serif';
+        ctx.fillText('KENZO TARGET SCREENSHOT', 20, 50);
+        const link = document.createElement('a');
+        link.download = 'target_screenshot.png';
+        link.href = canvas.toDataURL('image/png');
+        link.click();
+        toast('Screenshot diambil');
+        addLog('Screenshot');
+    }
+
+    // ===== MESSAGE =====
+    function showMessage(msg) {
+        const n = document.createElement('div');
+        n.style.cssText = 'position:fixed;bottom:100px;left:50%;transform:translateX(-50%);background:#111a2a;border:1px solid #ff1744;border-radius:14px;padding:14px 22px;z-index:9998;max-width:90%;color:#e0ecf5;text-align:center;box-shadow:0 8px 30px rgba(0,0,0,0.6);';
+        n.innerHTML = `<div style="font-size:11px;color:#4a6a8a;margin-bottom:4px;">PESAN DARI KENZO</div><div style="font-size:15px;">${msg}</div>`;
+        document.body.appendChild(n);
+        setTimeout(() => n.remove(), 4000);
+        toast('Pesan diterima');
+        addLog('Pesan: ' + msg);
+    }
+
+    // ===== AUDIO =====
+    function playDefaultAudio() {
+        try {
+            if (!audioCtx) audioCtx = new AudioContext();
+            const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+            o.connect(g); g.connect(audioCtx.destination);
+            o.type = 'sawtooth'; o.frequency.value = 440; g.gain.value = 0.3;
+            o.start();
+            setTimeout(() => o.stop(), 2500);
+            document.getElementById('sAudio').textContent = 'HIDUP';
+            document.getElementById('sAudio').className = 'value on';
+            toast('Audio diputar');
+            addLog('Audio diputar');
+        } catch(e) {
+            toast('Audio error', true);
+            addLog('Audio error: ' + e.message);
+        }
+    }
+
+    function stopAudio() {
+        if (audioSrc) { try { audioSrc.stop(); audioSrc = null; } catch(e) {} }
+        document.getElementById('sAudio').textContent = 'MATI';
+        document.getElementById('sAudio').className = 'value off';
+        toast('Audio dihentikan');
+        addLog('Audio dihentikan');
+    }
+
+    // ===== LISTENER PERINTAH =====
+    function listenCommand() {
+        const channel = new BroadcastChannel('kenzo_channel');
+        channel.onmessage = function(e) {
+            if (e.data && e.data.command) {
+                executeCommand(e.data.command, e.data);
+                // Kirim balik status
+                channel.postMessage({ status: 'Perintah diterima: ' + e.data.command });
+            }
+        };
+    }
+
+    // ===== CEK PERINTAH DARI LOCALSTORAGE =====
+    function checkStorage() {
+        const data = localStorage.getItem('kenzo_command');
+        if (data) {
+            try {
+                const payload = JSON.parse(data);
+                if (payload && payload.command) {
+                    executeCommand(payload.command, payload);
+                    localStorage.removeItem('kenzo_command');
+                }
+            } catch(e) {}
+        }
+    }
+
+    // ===== INIT =====
+    document.getElementById('deviceStatus').textContent = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) ? 'MOBILE' : 'DESKTOP';
+    addLog('Target siap');
+    localStorage.setItem('kenzo_target_status', 'Online');
+
+    // Listen
+    listenCommand();
+    setInterval(checkStorage, 1000);
+</script>
+</body>
+</html>
